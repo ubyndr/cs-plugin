@@ -1,0 +1,154 @@
+name: publish
+
+# Upload cs-plugin to TestPyPI or PyPI, from a release tag.
+#
+#   automatically   after `release` cuts a pkg-cs-plugin--v* tag: TestPyPI
+#   by hand         gh workflow run publish.yml -f index=pypi [-f tag=pkg-cs-plugin--v0.1.0]
+#
+# Real PyPI is by hand only: a version uploaded there can never be uploaded
+# again, even after deleting it, so it goes up once TestPyPI has shown it works.
+#
+# No tokens: both indexes trust this workflow file through OIDC ("trusted
+# publishing"). Each needs a trusted publisher registered once, with owner
+# ubyndr, repository cs-plugin, workflow publish.yml, and environment
+# `testpypi` or `pypi`. One workflow file for both triggers, because a trusted
+# publisher names exactly one workflow file.
+
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      index:
+        description: "Where to upload"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+      tag:
+        description: "Release tag to upload (default: the newest pkg-cs-plugin--v* tag)"
+        required: false
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      version: ${{ steps.pick.outputs.version }}
+      index: ${{ steps.pick.outputs.index }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: pick
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_INDEX: ${{ inputs.index }}
+          RELEASED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch -q --tags --force
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            tag=${INPUT_TAG:-$(git tag --list 'pkg-cs-plugin--v*' --sort=-v:refname | head -1)}
+            index=$INPUT_INDEX
+            git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "::error::no tag $tag"; exit 1; }
+          else
+            # Only a release run that cut a package tag publishes anything.
+            tag=$(git tag --points-at "$RELEASED_SHA" --list 'pkg-cs-plugin--v*' | head -1)
+            index=testpypi
+          fi
+          if [ -z "$tag" ]; then
+            echo "No cs-plugin release on this commit; nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=${tag#pkg-cs-plugin--v}"
+            echo "index=$index"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - run: uv build packages/cs-plugin -o dist
+      - run: uvx twine check --strict dist/*
+      - name: The files are the tagged version
+        run: ls dist/cs_plugin-${{ needs.plan.outputs.version }}-py3-none-any.whl dist/cs_plugin-${{ needs.plan.outputs.version }}.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    needs: [plan, build]
+    if: needs.plan.outputs.index == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/cs-plugin/${{ needs.plan.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # Re-running for a version already there is not an error on TestPyPI.
+          skip-existing: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - name: Install it back from TestPyPI, as a user would
+        run: |
+          for i in 1 2 3 4 5 6; do
+            uvx --no-cache --default-index https://test.pypi.org/simple/ \
+              "cs-plugin@${{ needs.plan.outputs.version }}" --version && exit 0
+            echo "not visible yet; retrying"; sleep 20
+          done
+          exit 1
+
+  pypi:
+    needs: [plan, build]
+    if: needs.plan.outputs.index == 'pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/cs-plugin/${{ needs.plan.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # No skip-existing: uploading a version twice to PyPI is a mistake to see.
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - name: Install it back from PyPI, as a user would
+        run: |
+          for i in 1 2 3 4 5 6; do
+            uvx --no-cache "cs-plugin@${{ needs.plan.outputs.version }}" --version && exit 0
+            echo "not visible yet; retrying"; sleep 20
+          done
+          exit 1

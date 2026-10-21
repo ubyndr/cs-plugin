@@ -1,0 +1,85 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - run: uvx ruff check packages/ scripts/ tests/
+
+  build:
+    # What PyPI will receive: an sdist and a wheel with metadata twine accepts,
+    # and a wheel that installs into a clean environment and runs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - run: uv build packages/cs-plugin -o dist
+      - run: uvx twine check --strict dist/*
+      - name: The wheel's version is the package's version
+        run: |
+          set -euo pipefail
+          want=$(python3 -c "import tomllib;print(tomllib.load(open('packages/cs-plugin/pyproject.toml','rb'))['project']['version'])")
+          ls dist/cs_plugin-"$want"-py3-none-any.whl dist/cs_plugin-"$want".tar.gz
+      - run: |
+          uv venv /tmp/clean
+          uv pip install --python /tmp/clean/bin/python dist/*.whl
+          /tmp/clean/bin/cs-plugin --version
+          /tmp/clean/bin/cs-plugin --help
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # One Python version failing says nothing about the others; see them all.
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - run: uv venv --python ${{ matrix.python }}
+      - run: uv pip install -e "packages/cs-plugin[test]"
+      # Offline: the source index, plugins.toml, generated files, sync plans.
+      - run: uv run pytest packages/cs-plugin -q
+      # The release tooling, against throwaway git repos.
+      - run: uv run pytest tests -q
+
+  version-bumps:
+    # A change to the package's code must bump its version, or nobody running a
+    # pinned tag would ever receive it -- and nothing else would notice.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: python3 scripts/versions.py check-bumps --base "origin/${{ github.base_ref }}"
+
+  install-from-git:
+    # What a user gets from installing straight from git.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      # On a pull request github.sha is a synthetic merge commit. Pin to the
+      # branch head instead, so what is tested is what was pushed.
+      - id: rev
+        run: |
+          echo "sha=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
+      - run: |
+          uvx --from "git+https://github.com/${{ github.repository }}@${{ steps.rev.outputs.sha }}#subdirectory=packages/cs-plugin" \
+            cs-plugin --version

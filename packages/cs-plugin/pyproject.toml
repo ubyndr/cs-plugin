@@ -1,0 +1,44 @@
+[project]
+name = "cs-plugin"
+version = "0.1.0"
+description = "Pin a project's Claude Code plugins, from any number of plugin repos, in one plugins.toml; generate the project's own marketplace from it, and install exactly that."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Cellular Semantics" }]
+keywords = ["claude-code", "claude", "plugins", "marketplace", "version-pinning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
+# Standard library only: it runs through `uvx` on every teammate's machine, and
+# shells out to `git` and `claude` for everything that touches a repo.
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+cs-plugin = "cs_plugin.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ubyndr/cs-plugin"
+Repository = "https://github.com/ubyndr/cs-plugin"
+Issues = "https://github.com/ubyndr/cs-plugin/issues"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
