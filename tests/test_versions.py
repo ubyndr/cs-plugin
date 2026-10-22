@@ -157,6 +157,20 @@ def test_new_plugin_passes(repo: Path) -> None:
     assert "(new)" in out.stdout
 
 
+def test_repo_without_marketplace_checks_packages(repo: Path) -> None:
+    # A packages-only repo: no plugins, no .claude-plugin/marketplace.json.
+    shutil.rmtree(repo / "plugins")
+    (repo / ".claude-plugin/marketplace.json").unlink()
+    commit(repo, "packages only")
+    sh(repo, "git", "branch", "-f", "main")
+    write(repo, "packages/tool/src/tool/__init__.py", "x = 1\n")
+    set_package_version(repo, "0.2.0")
+    commit(repo, "bump")
+    out = run(repo, "check-bumps", "--base", "main")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "0.1.0 -> 0.2.0" in out.stdout
+
+
 def test_plugin_missing_from_marketplace_fails(repo: Path) -> None:
     write(repo, "plugins/other/.claude-plugin/plugin.json",
           json.dumps({"name": "other", "version": "0.1.0"}))

@@ -201,14 +201,19 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if problems:
         raise project.ProjectError("the generated files do not match plugins.toml:\n  "
                                    + "\n  ".join(problems) + "\nRun `cs-plugin generate`.")
-    # Local scope: registering writes the marketplace's absolute path, which
-    # belongs in the uncommitted settings file, not the shared one.
-    _claude("plugin", "marketplace", "add", str((root / project.GEN_DIR).resolve()),
-            "--scope", "local")
-    _claude("plugin", "marketplace", "update", cfg.marketplace)
-    for cmd in project.sync_plan(cfg, _installed(cfg, root)):
-        print("claude " + " ".join(cmd))
-        print("  " + (_claude(*cmd).stdout.strip().splitlines() or [""])[-1])
+    settings = root / project.SETTINGS
+    committed = settings.read_text() if settings.exists() else None
+    try:
+        # Local scope: registering writes the marketplace's absolute path, which
+        # belongs in the uncommitted settings file, not the shared one.
+        _claude("plugin", "marketplace", "add", str((root / project.GEN_DIR).resolve()),
+                "--scope", "local")
+        _claude("plugin", "marketplace", "update", cfg.marketplace)
+        for cmd in project.sync_plan(cfg, _installed(cfg, root)):
+            print("claude " + " ".join(cmd))
+            print("  " + (_claude(*cmd).stdout.strip().splitlines() or [""])[-1])
+    finally:
+        project.restore_layout(settings, committed)
     after = _installed(cfg, root)
     print()
     status = 0
