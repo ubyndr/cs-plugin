@@ -1,6 +1,6 @@
 [project]
 name = "cs-plugin"
-version = "0.1.0"
+version = "0.1.1"
 description = "Pin a project's Claude Code plugins, from any number of plugin repos, in one plugins.toml; generate the project's own marketplace from it, and install exactly that."
 readme = "README.md"
 requires-python = ">=3.11"

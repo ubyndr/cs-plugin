@@ -247,6 +247,34 @@ def test_generate_leaves_gitignore_alone_outside_git(tmp_path: Path, cat: dict) 
     assert not (tmp_path / ".gitignore").exists()
 
 
+# --- restore_layout ------------------------------------------------------------
+
+COMMITTED = '{\n  "extraKnownMarketplaces": {},\n  "enabledPlugins": {"a@m": true}\n}\n'
+
+
+def test_reordered_settings_get_the_committed_text_back(tmp_path: Path) -> None:
+    # What `claude plugin install` does: same settings, its own key order.
+    path = tmp_path / "settings.json"
+    path.write_text('{"enabledPlugins": {"a@m": true}, "extraKnownMarketplaces": {}}')
+    assert project.restore_layout(path, COMMITTED)
+    assert path.read_text() == COMMITTED
+
+
+def test_changed_settings_are_left_alone(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    changed = '{"enabledPlugins": {"a@m": true, "b@m": true}, "extraKnownMarketplaces": {}}'
+    path.write_text(changed)
+    assert not project.restore_layout(path, COMMITTED)
+    assert path.read_text() == changed
+
+
+def test_restore_layout_without_a_committed_file(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text("{}")
+    assert not project.restore_layout(path, None)
+    assert not project.restore_layout(tmp_path / "missing.json", COMMITTED)
+
+
 # --- stale ---------------------------------------------------------------------
 
 def test_stale_is_empty_after_generate(tmp_path: Path, cat: dict) -> None:

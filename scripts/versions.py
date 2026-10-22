@@ -121,7 +121,9 @@ def check_bumps(base: str) -> int:
     changed = git("diff", "--name-only", f"{base}...HEAD").split()
     problems = []
 
-    marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+    # A repo of packages only has no marketplace; any plugin in it is then unlisted.
+    manifest = ROOT / ".claude-plugin/marketplace.json"
+    marketplace = json.loads(manifest.read_text()) if manifest.exists() else {"plugins": []}
     listed = {p["name"]: p for p in marketplace["plugins"]}
 
     for rel in releases():

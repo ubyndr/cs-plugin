@@ -235,6 +235,27 @@ def generate(root: Path, cfg: Config, index: dict[str, dict]) -> list[Path]:
     return changed
 
 
+def restore_layout(path: Path, before: str | None) -> bool:
+    """Put back `before` when the file now holds the same settings, reordered.
+
+    Installing a plugin makes Claude Code rewrite .claude/settings.json with its
+    known keys in its own order, so a sync that changed nothing would still show
+    the committed file as modified. A real change to the content is left alone.
+    """
+    if before is None or not path.exists():
+        return False
+    now = path.read_text()
+    if now == before:
+        return False
+    try:
+        same = json.loads(now) == json.loads(before)
+    except json.JSONDecodeError:
+        return False
+    if same:
+        path.write_text(before)
+    return same
+
+
 def ignore_local_settings(root: Path) -> Path | None:
     """Make the project's own .gitignore cover .claude/settings.local.json.
 
