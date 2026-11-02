@@ -19,7 +19,7 @@ from .remote import RemoteError
 
 DEFAULT_SOURCES = (
     "Cellular-Semantics/cap_skills",
-    "ubyndr/atlas-skills-release-test",
+    "Cellular-Semantics/atlas-skills",
 )
 # Plugin manifest fields worth showing in `list`; the rest stay in the source.
 CARRIED = ("description", "homepage", "category")
