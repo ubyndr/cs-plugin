@@ -88,9 +88,10 @@ def cmd_add(args: argparse.Namespace) -> int:
     cat = _index(cfg)
     for item in args.plugins:
         name, _, version = item.partition("@")
-        version = releases.resolve(name, version or None, cat)
-        old = cfg.plugins.get(name, {}).get("version")
-        cfg.plugins[name] = {"version": version}
+        spec = cfg.plugins.get(name, {})
+        version = releases.resolve(name, version or None, cat, spec)
+        old = spec.get("version")
+        cfg.plugins[name] = project.repinned(spec, version)
         print(f"{name} {old + ' -> ' if old and old != version else ''}{version}")
     _write(cfg, cat)
     return 0
@@ -130,7 +131,7 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     cat = _index(cfg)
     behind = releases.behind(cfg, cat, args.plugins or None)
     for name, have, newest in behind:
-        cfg.plugins[name] = {"version": newest}
+        cfg.plugins[name] = project.repinned(cfg.plugins[name], newest)
         print(f"{name} {have} -> {newest}")
     if not behind:
         print("already at the newest releases")

@@ -405,3 +405,53 @@ def test_versions_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: d
         {"org/cap": CAP, "org/atlas": ATLAS, "org/dup": CAP}))
     assert run_versions(monkeypatch, tmp_path, clash, "cap-tools") == 1
     assert "is in both" in capsys.readouterr().err
+
+
+OTHER = {"repo": "someone/theirs", "path": "plugins/other", "version": "1.2.0"}
+
+
+def run_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict, *argv: str) -> int:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_index", lambda cfg: cat)
+    return cli.main(list(argv))
+
+
+def test_add_keeps_an_explicit_repo_outside_the_sources(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict) -> None:
+    seen = []
+    monkeypatch.setattr(remote, "versions",
+                        lambda url, name: seen.append(url) or ["1.3.0", "1.2.0"])
+    monkeypatch.setattr(remote, "manifest", lambda source, ref: {"name": "other"})
+    project.save(tmp_path, project.Config("p", {"other": dict(OTHER)}))
+    assert run_cli(monkeypatch, tmp_path, cat, "add", "other@1.3.0") == 0
+    assert seen == ["https://github.com/someone/theirs.git"]
+    assert project.load(tmp_path).plugins["other"] == {**OTHER, "version": "1.3.0"}
+
+
+def test_add_keeps_an_explicit_repo_for_a_name_in_the_sources(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict) -> None:
+    seen = []
+    monkeypatch.setattr(remote, "versions", lambda url, name: seen.append(url) or ["1.3.0"])
+    monkeypatch.setattr(remote, "manifest", lambda source, ref: {"name": "cap-tools"})
+    mine = {"repo": "me/fork", "path": "plugins/cap-tools", "version": "1.0.0"}
+    project.save(tmp_path, project.Config("p", {"cap-tools": dict(mine)}))
+    assert run_cli(monkeypatch, tmp_path, cat, "add", "cap-tools") == 0
+    assert seen == ["https://github.com/me/fork.git"]
+    assert project.load(tmp_path).plugins["cap-tools"] == {**mine, "version": "1.3.0"}
+
+
+def test_add_replaces_a_sha_pin_with_a_release(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: ["0.4.1"])
+    monkeypatch.setattr(remote, "manifest", lambda source, ref: {"name": "cap-tools"})
+    project.save(tmp_path, project.Config("p", {"cap-tools": {"sha": "a" * 40}}))
+    assert run_cli(monkeypatch, tmp_path, cat, "add", "cap-tools") == 0
+    assert project.load(tmp_path).plugins["cap-tools"] == {"version": "0.4.1"}
+
+
+def test_upgrade_keeps_an_explicit_repo(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: ["1.3.0", "1.2.0"])
+    project.save(tmp_path, project.Config("p", {"other": dict(OTHER)}))
+    assert run_cli(monkeypatch, tmp_path, cat, "upgrade") == 0
+    assert project.load(tmp_path).plugins["other"] == {**OTHER, "version": "1.3.0"}
