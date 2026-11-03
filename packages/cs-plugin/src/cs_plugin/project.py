@@ -124,6 +124,11 @@ def save(root: Path, cfg: Config) -> None:
     (root / CONFIG).write_text("\n".join(lines) + "\n")
 
 
+def repinned(spec: dict, version: str) -> dict:
+    """`spec` pinned to release `version`, keeping any repo, url or path it names."""
+    return {**{k: spec[k] for k in SOURCE_KEYS if k in spec}, "version": version}
+
+
 def pinned_source(plugin: str, spec: dict, index: dict[str, dict]) -> dict:
     """The marketplace `source` for one pinned plugin."""
     if any(k in spec for k in SOURCE_KEYS):

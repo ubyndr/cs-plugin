@@ -53,9 +53,14 @@ def released(name: str, source: dict) -> list[str]:
     return found
 
 
-def resolve(name: str, version: str | None, cat: dict[str, dict]) -> str:
-    """The release `add` pins: `version`, or the newest, checked to exist."""
-    source = entry(name, cat)["source"]
+def resolve(name: str, version: str | None, cat: dict[str, dict],
+            spec: dict | None = None) -> str:
+    """The release `add` pins: `version`, or the newest, checked to exist.
+
+    `spec` is the plugin's current pin, if any: one naming a repo or url is
+    resolved against that, not the sources.
+    """
+    source, _ = source_of(name, spec or {}, cat)
     found = released(name, source)
     version = version or found[0]
     if version not in found:
