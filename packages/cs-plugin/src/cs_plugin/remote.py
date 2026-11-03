@@ -52,6 +52,18 @@ def git_url(source: dict) -> str | None:
     return None
 
 
+def release_url(source: dict, plugin: str, version: str) -> str | None:
+    """The GitHub page of a plugin release, or None for a repo not on GitHub.
+
+    GitHub serves this page for a bare tag too, so it exists even where no
+    GitHub Release was cut for the tag.
+    """
+    url = git_url(source) or ""
+    if not url.startswith("https://github.com/"):
+        return None
+    return f"{url.removesuffix('.git')}/releases/tag/{tag_for(plugin, version)}"
+
+
 def manifest(source: dict, ref: str) -> dict | None:
     """A plugin's plugin.json at `ref`, or None where it cannot be read cheaply.
 
