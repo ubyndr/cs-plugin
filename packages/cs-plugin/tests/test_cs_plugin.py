@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from cs_plugin import cli, project, remote, sources
+from cs_plugin import cli, project, releases, remote, sources
 
 CAP = {"name": "cap_skills", "plugins": [
     {"name": "cap-tools", "source": "./plugins/cap-tools", "description": "CAP tools"}]}
@@ -328,22 +328,22 @@ def test_add_refuses_a_bundle(monkeypatch: pytest.MonkeyPatch, cat: dict) -> Non
     monkeypatch.setattr(remote, "manifest", lambda source, ref: {
         "name": "cap-tools", "dependencies": ["a@m", {"name": "b", "marketplace": "m"}]})
     with pytest.raises(project.ProjectError, match="cs-plugin add a b"):
-        cli._resolve("cap-tools", None, cat)
+        releases.resolve("cap-tools", None, cat)
 
 
 def test_add_picks_newest_release(monkeypatch: pytest.MonkeyPatch, cat: dict) -> None:
     monkeypatch.setattr(remote, "versions", lambda url, name: ["0.4.1", "0.4.0"])
     monkeypatch.setattr(remote, "manifest", lambda source, ref: {"name": "cap-tools"})
-    assert cli._resolve("cap-tools", None, cat) == "0.4.1"
-    assert cli._resolve("cap-tools", "0.4.0", cat) == "0.4.0"
+    assert releases.resolve("cap-tools", None, cat) == "0.4.1"
+    assert releases.resolve("cap-tools", "0.4.0", cat) == "0.4.0"
     with pytest.raises(project.ProjectError, match="not released"):
-        cli._resolve("cap-tools", "9.9.9", cat)
+        releases.resolve("cap-tools", "9.9.9", cat)
 
 
 def test_add_without_releases_suggests_a_sha(monkeypatch: pytest.MonkeyPatch, cat: dict) -> None:
     monkeypatch.setattr(remote, "versions", lambda url, name: [])
     with pytest.raises(project.ProjectError, match="sha ="):
-        cli._resolve("cap-tools", None, cat)
+        releases.resolve("cap-tools", None, cat)
 
 
 def run_versions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
