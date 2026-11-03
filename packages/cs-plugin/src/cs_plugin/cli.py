@@ -1,6 +1,7 @@
 """cs-plugin: pin a project's Claude Code plugins in plugins.toml, install exactly that.
 
     cs-plugin list                     every plugin in the sources, with releases
+    cs-plugin versions NAME            every release of one plugin
     cs-plugin add NAME[@VERSION]...    pin plugins (newest release by default)
     cs-plugin remove NAME...           drop plugins
     cs-plugin upgrade [NAME...]        move pins to the newest release
@@ -59,23 +60,70 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def _resolve(name: str, version: str | None, cat: dict[str, dict]) -> str:
+def _entry(name: str, cat: dict[str, dict]) -> dict:
+    """A plugin's index entry, when its name alone says where it is."""
     entry = cat.get(name)
     if entry is None:
         raise project.ProjectError(f"{name} is not in any source; see `cs-plugin list`")
     why = sources.ambiguity(entry)
     if why:
         raise project.ProjectError(why)
-    url = remote.git_url(entry["source"])
+    return entry
+
+
+def _released(name: str, source: dict) -> list[str]:
+    """A plugin's released versions, newest first; an error if there are none."""
+    url = remote.git_url(source)
     found = remote.versions(url, name) if url else []
     if not found:
         raise project.ProjectError(
             f"{name} has no releases (no {name}--v* tags in its repo). Pin it to a commit "
             f"in {project.CONFIG} instead: {name} = {{ sha = \"<40-char commit>\" }}")
+    return found
+
+
+def cmd_versions(args: argparse.Namespace) -> int:
+    cfg = project.load(Path.cwd())
+    cat = _index(cfg)
+    name = args.plugin
+    spec = cfg.plugins.get(name, {})
+    if any(k in spec for k in project.SOURCE_KEYS):
+        # Pinned by its repo or url: read releases from there, as sync would.
+        source = project.pinned_source(name, spec, cat)
+        repo = spec.get("repo") or spec["url"]
+    else:
+        entry = _entry(name, cat)
+        source, repo = entry["source"], entry["repo"]
+    found = _released(name, source)
+    pinned = spec.get("version")
+    rows = []
+    for v in found:
+        notes = ["newest"] if v == found[0] else []
+        if v == pinned:
+            notes.append(f"pinned in {project.CONFIG}")
+        link = (remote.release_url(source, name, v) or "") if args.long else ""
+        rows.append((v, ", ".join(notes), link))
+    vw = max(len(v) for v, _, _ in rows)
+    nw = max(len(n) for _, n, _ in rows)
+    print(f"{name}  ({repo})")
+    for v, notes, link in rows:
+        print(f"  {v:<{vw}}  {notes:<{nw}}  {link}".rstrip())
+    if pinned and pinned not in found:
+        print(f"\npinned in {project.CONFIG} to {pinned}, which is not a release")
+    for k in ("ref", "sha"):
+        if k in spec:
+            print(f"\npinned in {project.CONFIG} to {k} {spec[k]}, not a release")
+    return 0
+
+
+def _resolve(name: str, version: str | None, cat: dict[str, dict]) -> str:
+    entry = _entry(name, cat)
+    found = _released(name, entry["source"])
     version = version or found[0]
     if version not in found:
+        more = f"; all of them: `cs-plugin versions {name}`" if len(found) > 10 else ""
         raise project.ProjectError(f"{name} {version} is not released; releases: "
-                                   + ", ".join(found[:10]))
+                                   + ", ".join(found[:10]) + more)
     deps = (remote.manifest(entry["source"], remote.tag_for(name, version)) or {}).get(
         "dependencies")
     if deps:
@@ -245,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("list", help="every plugin in the sources, with releases")
     p.add_argument("-l", "--long", action="store_true", help="also show descriptions")
     p.set_defaults(fn=cmd_list)
+    p = sub.add_parser("versions", help="every release of one plugin, newest first")
+    p.add_argument("plugin", metavar="NAME")
+    p.add_argument("-l", "--long", action="store_true", help="also link each release")
+    p.set_defaults(fn=cmd_versions)
     p = sub.add_parser("add", help="pin plugins, newest release unless NAME@VERSION")
     p.add_argument("plugins", nargs="+", metavar="NAME[@VERSION]")
     p.set_defaults(fn=cmd_add)

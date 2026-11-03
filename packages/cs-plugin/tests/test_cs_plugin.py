@@ -344,3 +344,64 @@ def test_add_without_releases_suggests_a_sha(monkeypatch: pytest.MonkeyPatch, ca
     monkeypatch.setattr(remote, "versions", lambda url, name: [])
     with pytest.raises(project.ProjectError, match="sha ="):
         cli._resolve("cap-tools", None, cat)
+
+
+def run_versions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+                 *argv: str) -> int:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_index", lambda cfg: cat)
+    return cli.main(["versions", *argv])
+
+
+def test_versions_lists_releases_newest_first_before_any_pin(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+        capsys: pytest.CaptureFixture) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: ["0.4.1", "0.4.0", "0.3.0"])
+    assert run_versions(monkeypatch, tmp_path, cat, "cap-tools") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "cap-tools  (org/cap)", "  0.4.1  newest", "  0.4.0", "  0.3.0"]
+
+
+def test_versions_marks_the_pinned_release(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+        capsys: pytest.CaptureFixture) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: ["0.4.1", "0.4.0"])
+    project.save(tmp_path, project.Config("p", {"cap-tools": {"version": "0.4.0"}}))
+    assert run_versions(monkeypatch, tmp_path, cat, "cap-tools") == 0
+    assert capsys.readouterr().out.splitlines()[1:] == [
+        "  0.4.1  newest", "  0.4.0  pinned in plugins.toml"]
+
+
+def test_versions_long_links_each_release(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+        capsys: pytest.CaptureFixture) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: ["0.4.1", "0.4.0"])
+    assert run_versions(monkeypatch, tmp_path, cat, "-l", "cap-tools") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[2] == ("  0.4.0          https://github.com/org/cap/releases/tag/"
+                      "cap-tools--v0.4.0")
+
+
+def test_versions_reads_an_explicitly_pinned_repo(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+        capsys: pytest.CaptureFixture) -> None:
+    seen = []
+    monkeypatch.setattr(remote, "versions", lambda url, name: seen.append(url) or ["1.2.0"])
+    project.save(tmp_path, project.Config("p", {"other": {
+        "repo": "someone/theirs", "path": "plugins/other", "version": "1.2.0"}}))
+    assert run_versions(monkeypatch, tmp_path, cat, "other") == 0
+    assert seen == ["https://github.com/someone/theirs.git"]
+    assert "1.2.0  newest, pinned in plugins.toml" in capsys.readouterr().out
+
+
+def test_versions_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cat: dict,
+                         capsys: pytest.CaptureFixture) -> None:
+    monkeypatch.setattr(remote, "versions", lambda url, name: [])
+    assert run_versions(monkeypatch, tmp_path, cat, "nope") == 1
+    assert "not in any source" in capsys.readouterr().err
+    assert run_versions(monkeypatch, tmp_path, cat, "cap-tools") == 1
+    assert "sha =" in capsys.readouterr().err
+    clash = sources.index([*SOURCES, "org/dup"], fake_fetch(
+        {"org/cap": CAP, "org/atlas": ATLAS, "org/dup": CAP}))
+    assert run_versions(monkeypatch, tmp_path, clash, "cap-tools") == 1
+    assert "is in both" in capsys.readouterr().err

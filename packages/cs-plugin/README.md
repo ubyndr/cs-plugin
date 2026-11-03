@@ -21,12 +21,16 @@ so you can drop the `uvx`.
 ```sh
 cs-plugin list           # every plugin in the source repos, and its newest release
 cs-plugin list -l        # with descriptions
+cs-plugin versions cap-tools     # every release of one plugin, newest first
+cs-plugin versions -l cap-tools  # with a link to each release
 cs-plugin sources        # which repos those are
 ```
 
 Plugins are read live from each source repo's own
 `.claude-plugin/marketplace.json`, and releases from its `<plugin>--v<version>`
 tags (what `claude plugin tag` writes). A release anywhere shows up at once.
+`versions` marks the release this project pins, and works before you `add`,
+so you can pick an older release to pin with `cs-plugin add NAME@VERSION`.
 
 ## Set up a project
 
